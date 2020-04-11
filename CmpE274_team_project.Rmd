@@ -1,0 +1,121 @@
+---
+title: "CmpE274_team_project"
+author: "Chen-Feng Huang"
+date: "4/5/2020"
+output: html_document
+---
+
+
+load Cassandra drive
+```{r}
+#install.packages('RJDBC')
+library(RJDBC)
+drv <- JDBC("org.apache.cassandra.cql.jdbc.CassandraDriver", 
+            list.files("D:/apache-cassandra-3.11.6/lib",
+                       pattern="jar$",full.names=T))
+```
+
+build connection between R and Cassandra
+```{r}
+keyspace <- dbConnect(drv, "jdbc:cassandra://ec2-18-144-54-245.us-west-1.compute.amazonaws.com:9160/preselectionbi")
+```
+
+
+loading tables
+```{r}
+primaryresults <- dbGetQuery(keyspace, "select * from primaryresults")
+pres_results_2016 <- dbGetQuery(keyspace, "select * from pres_results_2016")
+County_facts_first <- dbGetQuery(keyspace, "select * from County_facts_first")
+County_facts_second <- dbGetQuery(keyspace, "select * from County_facts_second")
+```
+
+
+filter result and get table
+```{r}
+county <- readline(prompt="Enter an text: ")
+res <- dbGetQuery(keyspace, 'select * from pres_results_2016 where fips = ? ALLOW FILTERING', county)
+res
+```
+
+
+
+```{r}
+#install.packages('dplyr')
+library(dplyr)
+
+unique_states <- unique(pres_results_2016[,c('fips')])
+unique_county <- unique(pres_results_2016[,c('county')])
+```
+
+```{r}
+#unique_county
+length(unique_states)
+length(unique_county)
+```
+
+```{r}
+head(unique_county)
+```
+
+
+Total population has voted
+```{r}
+#total_votes <- dbGetQuery(keyspace, 'select sum(total_votes) from pres_results_2016')
+total_votes <- filter(select(pres_results_2016, 'fips', 'cand', 'total_votes'), fips == 'US', cand == ' None of these candidates')
+# FOLLOW the pattern of cand above, miss a space before 'None' will result 0 row
+total_votes
+```
+
+
+Top votes of each county state, the lead of each county state
+```{r}
+#top_votes <- dbGetQuery(keyspace, 'select sum(total_votes) from pres_results_2016 where fips = ? allow filtering', county)
+
+#sprintf("CA: %i", top_votes)
+#pres_results_2016 %>% group_by(county) %>% summarise(votes = max(votes), lead = lead)
+
+#top_votes = data.frame()
+
+#for(i in seq(length(unique_county))){
+  #test <- filter(pres_results_2016, votes == max(pres_results_2016[grepl(unique_county[i], pres_results_2016[["county"]]),]$votes))
+  #top_votes =  rbind(top_votes, test)
+#} 
+
+
+top_votes_each_county <- pres_results_2016 %>% group_by(county, fips, lead) %>% summarise(votes = max(votes))
+top_votes_each_county[order(top_votes_each_county$county),]
+```
+
+total (population) votes of each canidate
+```{r}
+total_votes_each_canidate <- filter(select(pres_results_2016, 'fips', 'cand', 'votes'), fips == 'US')
+total_votes_each_canidate[order(total_votes_each_canidate$votes, decreasing=TRUE), ]
+```
+
+total votes of each party
+```{r}
+total_votes_each_party <- primaryresults %>% group_by(party) %>% summarise(total_votes = sum(votes))
+total_votes_each_party[order(total_votes_each_party$total_votes, decreasing=TRUE), ]
+```
+
+total (population) votes of each state
+```{r}
+total_votes_each_state <- pres_results_2016 %>% group_by(fips) %>% summarise(total_votes = sum(votes)/2)
+#divide 2 to remove duplicate votes 
+total_votes_each_state <- total_votes_each_state[!(total_votes_each_state$fips == 'US'),]
+total_votes_each_state[order(total_votes_each_state$fips), ]
+```
+
+total (population) votes of each county
+```{r}
+total_votes_each_county <- filter(select(pres_results_2016, 'county', 'fips', 'total_votes'))
+total_votes_each_county <- distinct(total_votes_each_county[order(total_votes_each_county$county), ])
+total_votes_each_county <- total_votes_each_county[!(total_votes_each_county$fips == 'US'),]
+total_votes_each_county
+```
+
+
+
+```{r}
+#write.csv(res, 'D:/res.csv')
+```
